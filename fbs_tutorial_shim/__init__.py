@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from os import makedirs
 from os.path import join, relpath, dirname, isdir
-from shutil import copyfile
+from shutil import copy
 
 import hashlib
 import os
@@ -57,7 +57,7 @@ def pack(main_py, src_dir, dst_dir):
             if not is_equal:
                 dst_path = join(dst_dir, main_py_hash, file_rel_path)
                 makedirs(dirname(dst_path), exist_ok=True)
-                copyfile(file_path, dst_path)
+                copy(file_path, dst_path)
 
 def unpack(main_py, src_dir, dst_dir):
     main_py_hash = get_py_file_hash(main_py)
@@ -83,7 +83,7 @@ def _copytree(src_dir, dst_dir):
             file_rel_path = relpath(file_path, src_dir)
             dst_path = join(dst_dir, file_rel_path)
             makedirs(dirname(dst_path), exist_ok=True)
-            copyfile(file_path, dst_path)
+            copy(file_path, dst_path)
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Package files for an OS shim.')
