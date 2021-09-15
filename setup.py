@@ -20,6 +20,7 @@ def _get_package_data(pkg_dir, data_subdir):
 description = 'fbs tutorial helper'
 setup(
     name='fbs-tutorial-shim',
+    version='0.9.9',
     description=description,
     long_description=
         description + '\n\nSee: https://github.com/mherrmann/fbs-tutorial-shim',
@@ -34,8 +35,8 @@ setup(
     },
     install_requires=[
         'PyQt5',
-        'fbs_tutorial_shim_windows; sys_platform=="win32"',
-        'fbs_tutorial_shim_mac; sys_platform=="darwin"'
+        'fbs-tutorial-shim-windows; sys_platform=="win32"',
+        'fbs-tutorial-shim-mac; sys_platform=="darwin"'
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
