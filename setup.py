@@ -34,7 +34,6 @@ setup(
     },
     install_requires=[
         'PyQt5',
-        'PyInstaller',
         'fbs_tutorial_shim_windows; sys_platform=="win32"',
         'fbs_tutorial_shim_mac; sys_platform=="darwin"'
     ],
