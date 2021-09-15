@@ -20,7 +20,7 @@ def _get_package_data(pkg_dir, data_subdir):
 description = 'fbs tutorial helper'
 setup(
     name='fbs-tutorial-shim',
-    version='0.9.9',
+    version='1.0.0',
     description=description,
     long_description=
         description + '\n\nSee: https://github.com/mherrmann/fbs-tutorial-shim',
