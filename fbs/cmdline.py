@@ -24,10 +24,6 @@ def main(project_dir=None):
         fbs.init(project_dir)
         # Load built-in commands:
         from fbs import builtin_commands
-        from fbs.builtin_commands import _docker
-        from fbs.builtin_commands import _gpg
-        from fbs.builtin_commands import _account
-        from fbs.builtin_commands import _licensing
         fn, args = _parse_cmdline()
         fn(*args)
     except KeyboardInterrupt:

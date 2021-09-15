@@ -1,23 +1,18 @@
 """
-This module contains all of fbs's built-in commands. They are invoked when you
-run `fbs <command>` on the command line. But you are also free to import them in
-your Python build script and execute them there.
+This module contains a very trimmed-down version of fbs's built-in commands.
 """
-from fbs import path, SETTINGS, activate_profile
-from fbs.builtin_commands._util import prompt_for_value, is_valid_version, \
-    require_existing_project, update_json, require_frozen_app, require_installer
+from fbs import path, SETTINGS
+from fbs.builtin_commands._util import prompt_for_value, \
+    require_existing_project, require_frozen_app
 from fbs.cmdline import command
 from fbs.resources import copy_with_filtering
-from fbs.upload import _upload_repo
 from fbs_runtime import FbsError
 from fbs_runtime.platform import is_windows, is_mac, is_linux, is_arch_linux, \
     is_ubuntu, is_fedora
-from getpass import getuser
-from importlib.util import find_spec
+from fbs_tutorial_shim import unpack, UnknownHash
 from os import listdir, remove, unlink, mkdir
-from os.path import join, isfile, isdir, islink, dirname, exists, relpath
+from os.path import join, isfile, isdir, islink, dirname, exists
 from shutil import rmtree
-from unittest import TestSuite, TextTestRunner, defaultTestLoader
 
 import logging
 import os
@@ -26,6 +21,11 @@ import sys
 
 _LOG = logging.getLogger(__name__)
 
+_FIXED_APP_NAME = 'MyFbsApp'
+_FIXED_AUTHOR = 'Author'
+_FIXED_MAC_BUNDLE_IDENTIFIER = 'com.author.myfbsapp'
+_FIXED_PYTHON_BINDINGS = 'PyQt5'
+
 @command
 def startproject():
     """
@@ -33,35 +33,17 @@ def startproject():
     """
     if exists('src'):
         raise FbsError('The src/ directory already exists. Aborting.')
-    app = prompt_for_value('App name', default='MyApp')
-    user = getuser().title()
-    author = prompt_for_value('Author', default=user)
-    has_pyqt = _has_module('PyQt5')
-    has_pyside = _has_module('PySide2')
-    if has_pyqt and not has_pyside:
-        python_bindings = 'PyQt5'
-    elif not has_pyqt and has_pyside:
-        python_bindings = 'PySide2'
-    else:
-        python_bindings = prompt_for_value(
-            'Qt bindings', choices=('PyQt5', 'PySide2'), default='PyQt5'
-        )
-    eg_bundle_id = 'com.%s.%s' % (
-        author.lower().split()[0], ''.join(app.lower().split())
-    )
-    mac_bundle_identifier = prompt_for_value(
-        'Mac bundle identifier (eg. %s, optional)' % eg_bundle_id,
-        optional=True
-    )
     mkdir('src')
     template_dir = join(dirname(__file__), 'project_template')
     template_path = lambda relpath: join(template_dir, *relpath.split('/'))
+    # fbs prompts the user for several values such as the app name.
+    # We use hard-coded values to be able to use pre-compiled binaries.
     copy_with_filtering(
         template_dir, '.', {
-            'app_name': app,
-            'author': author,
-            'mac_bundle_identifier': mac_bundle_identifier,
-            'python_bindings': python_bindings
+            'app_name': _FIXED_APP_NAME,
+            'author': _FIXED_AUTHOR,
+            'mac_bundle_identifier': _FIXED_MAC_BUNDLE_IDENTIFIER,
+            'python_bindings': _FIXED_PYTHON_BINDINGS
         },
         files_to_filter=[
             template_path('src/build/settings/base.json'),
@@ -71,8 +53,8 @@ def startproject():
     )
     print('')
     _LOG.info(
-        "Created the src/ directory. If you have %s installed, you can now "
-        "do:\n\n    fbs run", python_bindings
+        "Created the src/ directory. You can now do:\n\n"
+        "    fbs run"
     )
 
 @command
@@ -81,12 +63,6 @@ def run():
     Run your app from source
     """
     require_existing_project()
-    if not _has_module('PyQt5') and not _has_module('PySide2'):
-        raise FbsError(
-            "Couldn't find PyQt5 or PySide2. Maybe you need to:\n"
-            "    pip install PyQt5==5.9.2 or\n"
-            "    pip install PySide2==5.12.2"
-        )
     env = dict(os.environ)
     pythonpath = path('src/main/python')
     old_pythonpath = env.get('PYTHONPATH', '')
@@ -96,74 +72,49 @@ def run():
     subprocess.run([sys.executable, path(SETTINGS['main_module'])], env=env)
 
 @command
-def freeze(debug=False):
+def freeze():
     """
     Compile your code to a standalone executable
     """
     require_existing_project()
-    if not _has_module('PyInstaller'):
-        raise FbsError(
-            "Could not find PyInstaller. Maybe you need to:\n"
-            "    pip install PyInstaller==3.4"
-        )
-    version = SETTINGS['version']
-    if not is_valid_version(version):
-        raise FbsError(
-            'Invalid version detected in settings. It should be three\n'
-            'numbers separated by dots, such as "1.2.3". You have:\n\t"%s".\n'
-            'Usually, this can be fixed in src/build/settings/base.json.'
-            % version
-        )
-    # Import respective functions late to avoid circular import
-    # fbs <-> fbs.freeze.X.
     app_name = SETTINGS['app_name']
+    main_py = path('src/main/python/main.py')
     if is_mac():
-        from fbs.freeze.mac import freeze_mac
-        freeze_mac(debug=debug)
+        import fbs_tutorial_shim_mac as os_shim_module
         executable = 'target/%s.app/Contents/MacOS/%s' % (app_name, app_name)
+    elif is_windows():
+        import fbs_tutorial_shim_windows as os_shim_module
+        executable = join('target', app_name, app_name) + '.exe'
     else:
-        executable = join('target', app_name, app_name)
-        if is_windows():
-            from fbs.freeze.windows import freeze_windows
-            freeze_windows(debug=debug)
-            executable += '.exe'
-        elif is_linux():
-            if is_ubuntu():
-                from fbs.freeze.ubuntu import freeze_ubuntu
-                freeze_ubuntu(debug=debug)
-            elif is_arch_linux():
-                from fbs.freeze.arch import freeze_arch
-                freeze_arch(debug=debug)
-            elif is_fedora():
-                from fbs.freeze.fedora import freeze_fedora
-                freeze_fedora(debug=debug)
-            else:
-                from fbs.freeze.linux import freeze_linux
-                freeze_linux(debug=debug)
-        else:
-            raise FbsError('Unsupported OS')
+        # It would be nice to support Linux as well. But our current approach of
+        # hosting OS-specific frozen binaries on PyPI does not allow it. Here's
+        # why: We obtain OS-specific binaries by declaring them as dependencies
+        # in setup.py. For example:
+        #     fbs-tutorial-shim-windows; sys_platform=='windows'
+        # For Linux, we need different binaries depending on the distribution.
+        # However, sys_platform only gives us "linux". This means that we would
+        # need to package the binaries for all Linux distributions in one PyPI
+        # package. But here comes the problem: PyPI has a maximum file size of
+        # 60 MB. This is not enough to contain the files for multiple
+        # distributions.
+        raise FbsError(
+            "This copy of fbs does not support Linux, sorry.\n"
+            "Please use Python 3.5/3.6 and `pip install fbs PyQt5==5.9.2`.\n"
+            "Or obtain fbs Pro from https://build-system.fman.io/pro."
+        )
+    data_dir = join(dirname(os_shim_module.__file__), 'data')
+    try:
+        unpack(main_py, data_dir, path('${freeze_dir}'))
+    except UnknownHash:
+        raise FbsError(
+            "This copy of fbs only supports main.py as in the tutorial.\n"
+            "Please use Python 3.5/3.6 and `pip install fbs PyQt5==5.9.2`.\n"
+            "Or obtain fbs Pro from https://build-system.fman.io/pro."
+        )
     _LOG.info(
         "Done. You can now run `%s`. If that doesn't work, see "
         "https://build-system.fman.io/troubleshooting.", executable
     )
-
-@command
-def sign():
-    """
-    Sign your app, so the user's OS trusts it
-    """
-    require_frozen_app()
-    if is_windows():
-        from fbs.sign.windows import sign_windows
-        sign_windows()
-        _LOG.info(
-            'Signed all binary files in %s and its subdirectories.',
-            relpath(path('${freeze_dir}'), path('.'))
-        )
-    elif is_mac():
-        _LOG.info('fbs does not yet implement `sign` on macOS.')
-    else:
-        _LOG.info('This platform does not support signing frozen apps.')
 
 @command
 def installer():
@@ -220,276 +171,6 @@ def installer():
     _LOG.info(' '.join(msg_parts))
 
 @command
-def sign_installer():
-    """
-    Sign installer, so the user's OS trusts it
-    """
-    if is_mac():
-        _LOG.info('fbs does not yet implement `sign_installer` on macOS.')
-        return
-    if is_ubuntu():
-        _LOG.info('Ubuntu does not support signing installers.')
-        return
-    require_installer()
-    if is_windows():
-        from fbs.sign_installer.windows import sign_installer_windows
-        sign_installer_windows()
-    elif is_arch_linux():
-        from fbs.sign_installer.arch import sign_installer_arch
-        sign_installer_arch()
-    elif is_fedora():
-        from fbs.sign_installer.fedora import sign_installer_fedora
-        sign_installer_fedora()
-    _LOG.info('Signed %s.', join('target', SETTINGS['installer']))
-
-@command
-def repo():
-    """
-    Generate files for automatic updates
-    """
-    require_existing_project()
-    if not _repo_is_supported():
-        raise FbsError('This command is not supported on this platform.')
-    app_name = SETTINGS['app_name']
-    pkg_name = app_name.lower()
-    try:
-        gpg_key = SETTINGS['gpg_key']
-    except KeyError:
-        raise FbsError(
-            'GPG key for code signing is not configured. You might want to '
-            'either\n'
-            '    1) run `fbs gengpgkey` or\n'
-            '    2) set "gpg_key" and "gpg_pass" in src/build/settings/.'
-        )
-    if is_ubuntu():
-        from fbs.repo.ubuntu import create_repo_ubuntu
-        if not SETTINGS['description']:
-            _LOG.info(
-                'Hint: Your app\'s "description" is empty. Consider setting it '
-                'in src/build/settings/linux.json.'
-            )
-        create_repo_ubuntu()
-        _LOG.info(
-            'Done. You can test the repository with the following commands:\n'
-            '    echo "deb [arch=amd64] file://%s stable main" '
-                '| sudo tee /etc/apt/sources.list.d/%s.list\n'
-            '    sudo apt-key add %s\n'
-            '    sudo apt-get update\n'
-            '    sudo apt-get install %s\n'
-            'To revert these changes:\n'
-            '    sudo dpkg --purge %s\n'
-            '    sudo apt-key del %s\n'
-            '    sudo rm /etc/apt/sources.list.d/%s.list\n'
-            '    sudo apt-get update',
-            path('target/repo'), pkg_name,
-            path('src/sign/linux/public-key.gpg'), pkg_name, pkg_name, gpg_key,
-            pkg_name,
-            extra={'wrap': False}
-        )
-    elif is_arch_linux():
-        from fbs.repo.arch import create_repo_arch
-        create_repo_arch()
-        _LOG.info(
-            "Done. You can test the repository with the following commands:\n"
-            "    sudo cp /etc/pacman.conf /etc/pacman.conf.bu\n"
-            "    echo -e '\\n[%s]\\nServer = file://%s' "
-                "| sudo tee -a /etc/pacman.conf\n"
-            "    sudo pacman-key --add %s\n"
-            "    sudo pacman-key --lsign-key %s\n"
-            "    sudo pacman -Syu %s\n"
-            "To revert these changes:\n"
-            "    sudo pacman -R %s\n"
-            "    sudo pacman-key --delete %s\n"
-            "    sudo mv /etc/pacman.conf.bu /etc/pacman.conf",
-            app_name, path('target/repo'),
-            path('src/sign/linux/public-key.gpg'), gpg_key, pkg_name, pkg_name,
-            gpg_key,
-            extra={'wrap': False}
-        )
-    else:
-        assert is_fedora()
-        from fbs.repo.fedora import create_repo_fedora
-        create_repo_fedora()
-        _LOG.info(
-            "Done. You can test the repository with the following commands:\n"
-            "    sudo rpm -v --import %s\n"
-            "    sudo dnf config-manager --add-repo file://%s/target/repo\n"
-            "    sudo dnf install %s\n"
-            "To revert these changes:\n"
-            "    sudo dnf remove %s\n"
-            "    sudo rm /etc/yum.repos.d/*%s*.repo\n"
-            "    sudo rpm --erase gpg-pubkey-%s",
-            path('src/sign/linux/public-key.gpg'), SETTINGS['project_dir'],
-            pkg_name, pkg_name, app_name, gpg_key[-8:].lower(),
-            extra={'wrap': False}
-        )
-
-def _repo_is_supported():
-    return is_ubuntu() or is_arch_linux() or is_fedora()
-
-@command
-def upload():
-    """
-    Upload installer and repository to fbs.sh
-    """
-    require_existing_project()
-    try:
-        username = SETTINGS['fbs_user']
-        password = SETTINGS['fbs_pass']
-    except KeyError as e:
-        raise FbsError(
-            'Could not find setting "%s". You may want to invoke one of the '
-            'following:\n'
-            ' * fbs register\n'
-            ' * fbs login'
-            % (e.args[0],)
-        ) from None
-    _upload_repo(username, password)
-    app_name = SETTINGS['app_name']
-    url = lambda p: 'https://fbs.sh/%s/%s/%s' % (username, app_name, p)
-    message = 'Done! '
-    pkg_name = app_name.lower()
-    installer_url = url(SETTINGS['installer'])
-    if is_linux():
-        message += 'Your users can now install your app via the following ' \
-                   'commands:\n'
-        format_commands = lambda *cmds: '\n'.join('    ' + c for c in cmds)
-        repo_url = url(SETTINGS['repo_subdir'])
-        if is_ubuntu():
-            message += format_commands(
-                "sudo apt-get install apt-transport-https",
-                "wget -qO - %s | sudo apt-key add -" % url('public-key.gpg'),
-                "echo 'deb [arch=amd64] %s stable main' | " % repo_url +
-                "sudo tee /etc/apt/sources.list.d/%s.list" % pkg_name,
-                "sudo apt-get update",
-                "sudo apt-get install " + pkg_name
-            )
-            message += '\nIf they already have your app installed, they can ' \
-                       'force an immediate update via:\n'
-            message += format_commands(
-                'sudo apt-get update '
-                '-o Dir::Etc::sourcelist="/etc/apt/sources.list.d/%s.list" '
-                '-o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"'
-                % pkg_name,
-                'sudo apt-get install --only-upgrade ' + pkg_name
-            )
-        elif is_arch_linux():
-            message += format_commands(
-                "curl -O %s && " % url('public-key.gpg') +
-                "sudo pacman-key --add public-key.gpg && " +
-                "sudo pacman-key --lsign-key %s && " % SETTINGS['gpg_key'] +
-                "rm public-key.gpg",
-                "echo -e '\\n[%s]\\nServer = %s' | sudo tee -a /etc/pacman.conf"
-                % (app_name, repo_url),
-                "sudo pacman -Syu " + pkg_name
-            )
-            message += '\nIf they already have your app installed, they can ' \
-                       'force an immediate update via:\n'
-            message += format_commands('sudo pacman -Syu --needed ' + pkg_name)
-        elif is_fedora():
-            message += format_commands(
-                "sudo rpm -v --import " + url('public-key.gpg'),
-                "sudo dnf config-manager --add-repo %s/%s.repo"
-                % (repo_url, app_name),
-                "sudo dnf install " + pkg_name
-            )
-            message += "\n(On CentOS, replace 'dnf' by 'yum' and " \
-                       "'dnf config-manager' by 'yum-config-manager'.)"
-            message += '\nIf they already have your app installed, they can ' \
-                       'force an immediate update via:\n'
-            message += \
-                format_commands('sudo dnf upgrade %s --refresh' % pkg_name)
-            message += '\nThis is for Fedora. For CentOS, use:\n'
-            message += format_commands(
-                'sudo yum clean all && sudo yum upgrade ' + pkg_name
-            )
-        else:
-            raise FbsError('This Linux distribution is not supported.')
-        message += '\nFinally, your users can also install without automatic ' \
-                   'updates by downloading:\n    ' + installer_url
-        extra = {'wrap': False}
-    else:
-        message += 'Your users can now download and install %s.' % installer_url
-        extra = None
-    _LOG.info(message, extra=extra)
-
-@command
-def release(version=None):
-    """
-    Bump version and run clean,freeze,...,upload
-    """
-    require_existing_project()
-    if version is None:
-        curr_version = SETTINGS['version']
-        next_version = _get_next_version(curr_version)
-        release_version = prompt_for_value(
-            'Release version', default=next_version
-        )
-    elif version == 'current':
-        release_version = SETTINGS['version']
-    else:
-        release_version = version
-    if not is_valid_version(release_version):
-        if not is_valid_version(version):
-            raise FbsError(
-                'The release version of your app is invalid. It should be '
-                'three\nnumbers separated by dots, such as "1.2.3". '
-                'You have: "%s".' % release_version
-            )
-    activate_profile('release')
-    SETTINGS['version'] = release_version
-    log_level = _LOG.level
-    if log_level == logging.NOTSET:
-        _LOG.setLevel(logging.WARNING)
-    try:
-        clean()
-        freeze()
-        if is_windows() and _has_windows_codesigning_certificate():
-            sign()
-        installer()
-        if (is_windows() and _has_windows_codesigning_certificate()) or \
-            is_arch_linux() or is_fedora():
-            sign_installer()
-        if _repo_is_supported():
-            repo()
-    finally:
-        _LOG.setLevel(log_level)
-    upload()
-    base_json = 'src/build/settings/base.json'
-    update_json(path(base_json), { 'version': release_version })
-    _LOG.info('Also, %s was updated with the new version.', base_json)
-
-@command
-def test():
-    """
-    Execute your automated tests
-    """
-    require_existing_project()
-    sys.path.append(path('src/main/python'))
-    suite = TestSuite()
-    test_dirs = SETTINGS['test_dirs']
-    for test_dir in map(path, test_dirs):
-        sys.path.append(test_dir)
-        try:
-            dir_names = listdir(test_dir)
-        except FileNotFoundError:
-            continue
-        for dir_name in dir_names:
-            dir_path = join(test_dir, dir_name)
-            if isfile(join(dir_path, '__init__.py')):
-                suite.addTest(defaultTestLoader.discover(
-                    dir_name, top_level_dir=test_dir
-                ))
-    has_tests = bool(list(suite))
-    if has_tests:
-        TextTestRunner().run(suite)
-    else:
-        _LOG.warning(
-            'No tests found. You can add them to:\n * '+
-            '\n * '.join(test_dirs)
-        )
-
-@command
 def clean():
     """
     Remove previous build outputs
@@ -510,15 +191,88 @@ def clean():
             elif islink(fpath):
                 unlink(fpath)
 
-def _has_windows_codesigning_certificate():
-    assert is_windows()
-    from fbs.sign.windows import _CERTIFICATE_PATH
-    return exists(path(_CERTIFICATE_PATH))
+_REQUIRES_FULL_FBS_COPY = \
+    "This copy of fbs only supports the tutorial commands, sorry.\n" \
+    "Please use Python 3.5/3.6 and `pip install fbs PyQt5==5.9.2`.\n" \
+    "Or obtain fbs Pro from https://build-system.fman.io/pro."
 
-def _has_module(name):
-    return bool(find_spec(name))
+@command
+def sign():
+    """
+    Sign your app, so the user's OS trusts it
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
 
-def _get_next_version(version):
-    version_parts = version.split('.')
-    next_patch = str(int(version_parts[-1]) + 1)
-    return '.'.join(version_parts[:-1]) + '.' + next_patch
+@command
+def sign_installer():
+    """
+    Sign installer, so the user's OS trusts it
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def repo():
+    """
+    Generate files for automatic updates
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def upload():
+    """
+    Upload installer and repository to fbs.sh
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def release(version=None):
+    """
+    Bump version and run clean,freeze,...,upload
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def test():
+    """
+    Execute your automated tests
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def buildvm():
+    """
+    Build a Linux VM. Eg.: buildvm ubuntu
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def runvm():
+    """
+    Run a Linux VM. Eg.: runvm ubuntu
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+
+@command
+def gengpgkey():
+    """
+    Generate a GPG key for Linux code signing
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+@command
+def register():
+    """
+    Create an account for uploading your files
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+@command
+def login():
+    """
+    Save your account details to secret.json
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)
+@command
+def init_licensing():
+    """
+    Generate public/private keys for licensing
+    """
+    raise FbsError(_REQUIRES_FULL_FBS_COPY)

@@ -1,7 +1,7 @@
-"""Create cross-platform desktop applications with Python and Qt
+"""fbs tutorial helper
 
 See:
-https://build-system.fman.io
+https://github.com/mherrmann/fbs-tutorial-shim
 """
 
 from os.path import relpath, join
@@ -17,35 +17,27 @@ def _get_package_data(pkg_dir, data_subdir):
             result.append(relpath(filepath, pkg_dir))
     return result
 
-description = 'Create cross-platform desktop applications with Python and Qt'
+description = 'fbs tutorial helper'
 setup(
-    name='fbs',
-    # Also update fbs/_defaults/requirements/base.txt when you change this:
-    version='0.9.9',
+    name='fbs-tutorial-shim',
     description=description,
     long_description=
-        description + '\n\nHome page: https://build-system.fman.io',
+        description + '\n\nSee: https://github.com/mherrmann/fbs-tutorial-shim',
     author='Michael Herrmann',
     author_email='michael+removethisifyouarehuman@herrmann.io',
-    url='https://build-system.fman.io',
+    url='https://github.com/mherrmann/fbs-tutorial-shim',
     packages=find_packages(exclude=('tests', 'tests.*')),
     package_data={
         'fbs': _get_package_data('fbs', '_defaults'),
         'fbs.builtin_commands':
-            _get_package_data('fbs/builtin_commands', 'project_template'),
-        'fbs.builtin_commands._gpg':
-            ['Dockerfile', 'genkey.sh', 'gpg-agent.conf'],
-        'fbs.installer.mac': _get_package_data(
-            'fbs/installer/mac', 'create-dmg'
-        )
+            _get_package_data('fbs/builtin_commands', 'project_template')
     },
-    install_requires=['PyInstaller==3.4'],
-    extras_require={
-        # Also update requirements.txt when you change this:
-        'licensing': ['rsa>=3.4.2'],
-        'sentry': ['sentry-sdk>=0.6.6'],
-        'upload': ['boto3']
-    },
+    install_requires=[
+        'PyQt5',
+        'PyInstaller',
+        'fbs_tutorial_shim_windows; sys_platform=="win32"',
+        'fbs_tutorial_shim_mac; sys_platform=="darwin"'
+    ],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
@@ -56,8 +48,9 @@ setup(
     
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
 
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules'
@@ -67,6 +60,6 @@ setup(
     },
     license='GPLv3 or later',
     keywords='PyQt',
-    platforms=['MacOS', 'Windows', 'Debian', 'Fedora', 'CentOS', 'Arch'],
+    platforms=['MacOS', 'Windows'],
     test_suite='tests'
 )

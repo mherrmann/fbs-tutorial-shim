@@ -19,11 +19,6 @@ def init(project_dir):
     Call this if you are invoking neither `fbs` on the command line nor
     fbs.cmdline.main() from Python.
     """
-    if sys.version_info[0] != 3 or sys.version_info[1] not in (5, 6):
-        raise FbsError(
-            'The free version of fbs only supports Python 3.5 and 3.6.\n'
-            'Please obtain fbs Pro from https://build-system.fman.io/pro.'
-        )
     SETTINGS.update(get_core_settings(abspath(project_dir)))
     for profile in get_default_profiles():
         activate_profile(profile)
