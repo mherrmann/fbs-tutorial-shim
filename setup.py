@@ -20,7 +20,7 @@ def _get_package_data(pkg_dir, data_subdir):
 description = 'fbs tutorial helper'
 setup(
     name='fbs-tutorial-shim',
-    version='1.0.1',
+    version='1.0.2',
     description=description,
     long_description=
         description + '\n\nSee: https://github.com/mherrmann/fbs-tutorial-shim',
@@ -31,7 +31,10 @@ setup(
     package_data={
         'fbs': _get_package_data('fbs', '_defaults'),
         'fbs.builtin_commands':
-            _get_package_data('fbs/builtin_commands', 'project_template')
+            _get_package_data('fbs/builtin_commands', 'project_template'),
+        'fbs.installer.mac': _get_package_data(
+            'fbs/installer/mac', 'create-dmg'
+        )
     },
     install_requires=[
         'PyQt5',
